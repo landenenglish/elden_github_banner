@@ -1,22 +1,29 @@
-console.log('Elden Banner content.js loaded!')
+/**
+ * Elden Banner - Content Script
+ *
+ * Shows Elden Ring-style banners for GitHub events.
+ * Forked from Elden Email by MettiFire.
+ *
+ * @see https://github.com/MettiFire/elden_mail_banner
+ */
 
-// Trigger definitions - inline to avoid module loading issues in content scripts
+// =============================================================================
+// TRIGGER CONFIGURATION
+// =============================================================================
+
 const TRIGGERS = [
   {
     id: 'github-pr-merged',
     name: 'PR Merged',
     urls: ['https://github.com/*'],
+    bannerStyle: 'enemy-felled',
     detection: {
       type: 'button_click',
-      // Use generic button selector - we'll rely on text matching
-      selectors: ['button'],
       textMatch: [
         'Merge pull request',
         'Confirm merge',
         'Squash and merge',
         'Rebase and merge',
-        'Confirm squash and merge',
-        'Confirm rebase and merge',
       ],
     },
     banner: {
@@ -24,54 +31,65 @@ const TRIGGERS = [
     },
   },
   {
-    id: 'github-pr-approved',
-    name: 'PR Approved',
+    id: 'github-conflicts-detected',
+    name: 'Conflicts Detected',
     urls: ['https://github.com/*'],
+    bannerStyle: 'you-died',
     detection: {
-      type: 'button_click',
-      selectors: ['button'],
-      textMatch: ['Submit review'],
-      additionalCheck: () => {
-        const approveRadio = document.querySelector(
-          'input[value="approve"]:checked'
-        )
-        return approveRadio !== null
-      },
+      type: 'text_appears',
+      textMatch: ['This branch has conflicts that must be resolved'],
     },
     banner: {
-      text: 'APPROVED',
+      text: 'CONFLICTS',
     },
   },
 ]
 
-// Polyfill for Firefox compatibility
+// =============================================================================
+// BROWSER COMPATIBILITY
+// =============================================================================
+
 const storage =
   typeof browser !== 'undefined' ? browser.storage : chrome.storage
 
-// Pre-load sound file
+// =============================================================================
+// ASSET LOADING
+// =============================================================================
+
 const soundUrl = chrome.runtime.getURL('assets/elden_ring_sound.mp3')
 
-// Default settings
+// Load Mantinia font dynamically (CSS relative paths don't work in content scripts)
+const fontUrl = chrome.runtime.getURL('assets/Mantinia.otf')
+const fontFace = new FontFace('Mantinia', `url(${fontUrl})`)
+fontFace
+  .load()
+  .then((loadedFont) => document.fonts.add(loadedFont))
+  .catch(() => {})
+
+// =============================================================================
+// USER PREFERENCES
+// =============================================================================
+
 let soundEnabled = true
 let bannerColor = 'yellow'
 
-// Load preferences
-const loadPrefs = async () => {
-  if (storage.sync) {
-    try {
-      const res = await new Promise((resolve) => {
-        storage.sync.get(['soundEnabled', 'bannerColor'], resolve)
-      })
-      soundEnabled = res.soundEnabled !== undefined ? res.soundEnabled : true
-      bannerColor = res.bannerColor || 'yellow'
-    } catch (e) {
-      console.error('Error loading preferences:', e)
-    }
+async function loadPreferences() {
+  if (!storage.sync) return
+
+  try {
+    const res = await new Promise((resolve) => {
+      storage.sync.get(['soundEnabled', 'bannerColor'], resolve)
+    })
+    soundEnabled = res.soundEnabled !== undefined ? res.soundEnabled : true
+    bannerColor = res.bannerColor || 'yellow'
+  } catch {
+    // Use defaults
   }
 }
-loadPrefs()
 
-// Real-time preference updates
+loadPreferences()
+
+// Listen for preference changes
 if (storage.onChanged) {
   storage.onChanged.addListener((changes) => {
     if (changes.soundEnabled) soundEnabled = changes.soundEnabled.newValue
@@ -79,23 +97,36 @@ if (storage.onChanged) {
   })
 }
 
+// =============================================================================
+// BANNER DISPLAY
+// =============================================================================
+
 /**
- * Show the Elden Ring-style banner with dynamic text
- * @param {string} text - The text to display on the banner
+ * Show the Elden Ring-style banner
+ * @param {string} text - Text to display
+ * @param {string} style - Banner style: 'enemy-felled' | 'you-died' | 'grace'
  */
-function showBanner(text) {
-  // Remove any existing banner
-  const existingBanner = document.getElementById('elden-ring-banner')
-  if (existingBanner) {
-    existingBanner.remove()
-  }
+function showBanner(text, style = null) {
+  // Remove existing banner
+  document.getElementById('elden-ring-banner')?.remove()
 
   const banner = document.createElement('div')
   banner.id = 'elden-ring-banner'
-  banner.className = `banner-${bannerColor}`
 
+  // Determine color class
+  let colorClass = 'banner-'
+  if (style === 'you-died') {
+    colorClass += 'red'
+  } else if (style === 'grace') {
+    colorClass += 'blue'
+  } else {
+    colorClass += bannerColor
+  }
+
+  banner.className = colorClass
   banner.innerHTML = `
     <div class="elden-banner-overlay"></div>
+    <div class="elden-banner-band"></div>
     <div class="elden-banner-content">
       <span class="elden-banner-text">${text}</span>
     </div>
@@ -103,191 +134,174 @@ function showBanner(text) {
 
   document.body.appendChild(banner)
 
+  // Play sound
   if (soundEnabled) {
     const audio = new Audio(soundUrl)
     audio.volume = 0.35
-    audio.play().catch((err) => console.error('Error playing sound:', err))
+    audio.play().catch(() => {})
   }
 
-  // Animate in
+  // Animate in/out
   setTimeout(() => banner.classList.add('show'), 50)
-
-  // Animate out after 3 seconds
   setTimeout(() => {
     banner.classList.remove('show')
     setTimeout(() => banner.remove(), 500)
   }, 3000)
 }
 
+// =============================================================================
+// TRIGGER DETECTION
+// =============================================================================
+
 /**
- * Check if the current URL matches any of the trigger's URL patterns
- * @param {string[]} urlPatterns - Array of URL patterns (with wildcards)
- * @returns {boolean}
+ * Check if current URL matches any patterns
  */
 function matchesUrl(urlPatterns) {
   const currentUrl = window.location.href
   return urlPatterns.some((pattern) => {
-    // Convert wildcard pattern to regex
     const regexPattern = pattern
       .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
       .replace(/\*/g, '.*')
-    const regex = new RegExp(`^${regexPattern}$`)
-    return regex.test(currentUrl)
+    return new RegExp(`^${regexPattern}$`).test(currentUrl)
   })
 }
 
 /**
- * Check if an element matches the trigger's detection criteria
- * @param {Element} element - The DOM element to check
- * @param {Object} detection - The trigger's detection configuration
- * @param {string} triggerId - For debug logging
- * @returns {boolean}
+ * Check if text matches any patterns (case-insensitive)
  */
-function matchesDetection(element, detection, triggerId = '') {
-  // Check if element matches any selector
-  const matchesSelector = detection.selectors.some((selector) => {
-    try {
-      return element.matches(selector)
-    } catch (e) {
-      return false
-    }
-  })
-
-  if (!matchesSelector) return false
-
-  // Check text match if specified
-  if (detection.textMatch && detection.textMatch.length > 0) {
-    const elementText = (element.innerText || element.textContent || '').trim()
-    const ariaLabel = element.getAttribute('aria-label') || ''
-    const title = element.getAttribute('title') || ''
-
-    const matchesText = detection.textMatch.some((text) => {
-      const lowerText = text.toLowerCase()
-      return (
-        elementText.toLowerCase().includes(lowerText) ||
-        ariaLabel.toLowerCase().includes(lowerText) ||
-        title.toLowerCase().includes(lowerText)
-      )
-    })
-
-    if (matchesText) {
-      console.log(`Elden Banner: Found matching button for ${triggerId}:`, elementText)
-    }
-
-    if (!matchesText) return false
-  }
-
-  // Run additional check if specified
-  if (
-    detection.additionalCheck &&
-    typeof detection.additionalCheck === 'function'
-  ) {
-    if (!detection.additionalCheck()) return false
-  }
-
-  return true
+function matchesText(text, patterns) {
+  if (!patterns?.length) return false
+  const lower = text.toLowerCase().trim()
+  return patterns.some((p) => lower.includes(p.toLowerCase()))
 }
 
 /**
- * Set up observers for all matching triggers
+ * Check if any pattern text exists on the page
  */
-function setupTriggerObservers() {
-  // Filter triggers that match the current URL
-  const activeTriggers = TRIGGERS.filter((trigger) => matchesUrl(trigger.urls))
-
-  if (activeTriggers.length === 0) {
-    console.log('Elden Banner: No active triggers for this URL')
-    return
-  }
-
-  console.log(
-    `Elden Banner: ${activeTriggers.length} active trigger(s) for this URL`
-  )
-
-  // Set up a single MutationObserver for all triggers
-  const observer = new MutationObserver(() => {
-    activeTriggers.forEach((trigger) => {
-      if (trigger.detection.type === 'button_click') {
-        setupButtonClickTrigger(trigger)
-      } else if (trigger.detection.type === 'element_appears') {
-        checkElementAppearsTrigger(trigger)
-      }
-    })
-  })
-
-  observer.observe(document.body, { childList: true, subtree: true })
-
-  // Also run immediately for any existing elements
-  activeTriggers.forEach((trigger) => {
-    if (trigger.detection.type === 'button_click') {
-      setupButtonClickTrigger(trigger)
-    } else if (trigger.detection.type === 'element_appears') {
-      checkElementAppearsTrigger(trigger)
-    }
-  })
+function findTextOnPage(patterns) {
+  const bodyText = document.body.innerText || document.body.textContent || ''
+  return matchesText(bodyText, patterns)
 }
 
+// =============================================================================
+// TRIGGER HANDLERS
+// =============================================================================
+
 /**
- * Set up click listeners for button_click type triggers
- * @param {Object} trigger - The trigger configuration
+ * Set up click listeners for button_click triggers
  */
 function setupButtonClickTrigger(trigger) {
   const { detection, banner } = trigger
 
-  // Find all potential buttons
-  detection.selectors.forEach((selector) => {
-    try {
-      document.querySelectorAll(selector).forEach((element) => {
-        // Skip if already attached
-        if (element.dataset[`eldenTrigger_${trigger.id}`]) return
+  if (!detection?.textMatch?.length) return
 
-        // Check if element matches detection criteria
-        if (matchesDetection(element, detection, trigger.id)) {
-          element.addEventListener('click', () => {
-            // Re-check additional criteria at click time
-            if (detection.additionalCheck && !detection.additionalCheck()) {
-              return
-            }
-            console.log(`Elden Banner: Triggered "${trigger.name}"`)
-            setTimeout(() => showBanner(banner.text), 500)
-          })
-          element.dataset[`eldenTrigger_${trigger.id}`] = 'true'
-          console.log(`Elden Banner: Attached listener to button for ${trigger.id}`)
-        }
+  document
+    .querySelectorAll('button, [role="button"], a, div[onclick]')
+    .forEach((element) => {
+      // Skip if already attached
+      if (element.getAttribute(`data-elden-trigger-${trigger.id}`)) return
+
+      const elementText = (
+        element.innerText ||
+        element.textContent ||
+        ''
+      ).trim()
+      const ariaLabel = element.getAttribute('aria-label') || ''
+      const title = element.getAttribute('title') || ''
+
+      const hasMatch = detection.textMatch.some((text) => {
+        const lower = text.toLowerCase()
+        return (
+          elementText.toLowerCase().includes(lower) ||
+          ariaLabel.toLowerCase().includes(lower) ||
+          title.toLowerCase().includes(lower)
+        )
       })
-    } catch (e) {
-      // Selector might be invalid, skip it
-    }
-  })
+
+      if (hasMatch) {
+        if (detection.additionalCheck && !detection.additionalCheck()) return
+
+        element.addEventListener('click', () => {
+          setTimeout(() => showBanner(banner.text, trigger.bannerStyle), 500)
+        })
+        element.setAttribute(`data-elden-trigger-${trigger.id}`, 'true')
+      }
+    })
 }
 
 /**
- * Check for element_appears type triggers
- * @param {Object} trigger - The trigger configuration
+ * Check for text_appears triggers
+ */
+function checkTextAppearsTrigger(trigger) {
+  const { detection, banner } = trigger
+
+  if (!detection?.textMatch?.length) return
+  if (trigger._triggered) return
+
+  if (findTextOnPage(detection.textMatch)) {
+    trigger._triggered = true
+    showBanner(banner.text, trigger.bannerStyle)
+  }
+}
+
+/**
+ * Check for element_appears triggers
  */
 function checkElementAppearsTrigger(trigger) {
   const { detection, banner } = trigger
 
+  if (!detection?.selectors) return
+
   detection.selectors.forEach((selector) => {
     try {
-      const elements = document.querySelectorAll(selector)
-      elements.forEach((element) => {
-        // Skip if already triggered for this element
-        if (element.dataset[`eldenTriggered_${trigger.id}`]) return
+      document.querySelectorAll(selector).forEach((element) => {
+        if (element.getAttribute(`data-elden-triggered-${trigger.id}`)) return
 
-        console.log(
-          `Elden Banner: Triggered "${trigger.name}" (element appeared)`
-        )
-        element.dataset[`eldenTriggered_${trigger.id}`] = 'true'
-        showBanner(banner.text)
+        element.setAttribute(`data-elden-triggered-${trigger.id}`, 'true')
+        showBanner(banner.text, trigger.bannerStyle)
       })
-    } catch (e) {
-      // Selector might be invalid, skip it
+    } catch {
+      // Invalid selector
     }
   })
 }
 
-// Initialize when DOM is ready
+// =============================================================================
+// INITIALIZATION
+// =============================================================================
+
+function setupTriggerObservers() {
+  const activeTriggers = TRIGGERS.filter((t) => matchesUrl(t.urls))
+
+  if (!activeTriggers.length) return
+
+  const processTriggers = () => {
+    activeTriggers.forEach((trigger) => {
+      if (!trigger?.detection) return
+
+      switch (trigger.detection.type) {
+        case 'button_click':
+          setupButtonClickTrigger(trigger)
+          break
+        case 'text_appears':
+          checkTextAppearsTrigger(trigger)
+          break
+        case 'element_appears':
+          checkElementAppearsTrigger(trigger)
+          break
+      }
+    })
+  }
+
+  // Watch for DOM changes
+  const observer = new MutationObserver(processTriggers)
+  observer.observe(document.body, { childList: true, subtree: true })
+
+  // Process existing elements
+  processTriggers()
+}
+
+// Start when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', setupTriggerObservers)
 } else {

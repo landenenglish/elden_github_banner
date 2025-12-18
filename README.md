@@ -1,80 +1,91 @@
-# Elden Banner
+# ⚔️ Elden Banner
 
-An Elden Ring–inspired browser extension that shows dramatic banners for GitHub events.  
-When you merge a PR or approve a review, a cinematic banner appears with sound, just like in the Lands Between. ⚔️
+An Elden Ring–inspired browser extension that shows dramatic banners for GitHub events.
 
-> Forked from [Elden Email](https://github.com/mettignis/elden-email) and customized for GitHub workflows.
+When you merge a PR, a cinematic **"PR MERGED"** banner appears with sound — just like defeating a boss in the Lands Between.
 
----
-
-## Features
-
-- **PR Merged** - Dramatic banner when you merge a pull request
-- **Approved** - Banner when you approve a PR review
-- Sound effect included (toggleable)
-- Choose your banner color (gold, red, blue)
-- Extensible trigger system for custom events
+> 🗡️ Forked from [Elden Email](https://github.com/MettiFire/elden_mail_banner) by [MettiFire](https://github.com/MettiFire)
 
 ---
 
-## Installation
+## ✨ Features
 
-### Chrome / Edge / Brave / Vivaldi
+- **PR Merged** — Gold "ENEMY FELLED" style banner when you merge
+- **Conflicts Detected** — Red "YOU DIED" style banner for merge conflicts
+- 🎵 Sound effect (toggleable)
+- 🎨 Choose banner color (gold, red, blue)
+- 🔧 Extensible trigger system for custom events
+
+---
+
+## 📦 Installation
+
+### Chrome / Edge / Brave
 
 1. Download or clone this repository
 2. Go to `chrome://extensions/`
-3. Enable **Developer Mode** (top right toggle)
-4. Click **Load unpacked** and select the project folder
-5. Done! Navigate to a GitHub PR and try merging
+3. Enable **Developer Mode** (top right)
+4. Click **Load unpacked** → select this folder
+5. Done! Merge a PR to test
 
 ### Firefox
 
-1. Copy files from `src/` to a new folder
-2. Rename `manifest_firefox.json` to `manifest.json`
-3. Go to `about:debugging` → "This Firefox"
-4. Click "Load Temporary Add-on" and select the `manifest.json`
+1. Go to `about:debugging` → "This Firefox"
+2. Click **Load Temporary Add-on**
+3. Select `manifest_firefox.json`
 
 ---
 
-## Adding Custom Triggers
+## 🎯 How It Works
 
-The extension uses a config-driven trigger system. To add new events, edit the `TRIGGERS` array in `src/content.js`:
+The extension watches for specific events on GitHub:
+
+| Event     | Detection              | Banner Style        |
+| --------- | ---------------------- | ------------------- |
+| PR Merged | Click on merge buttons | Gold (Enemy Felled) |
+| Conflicts | Text appears on page   | Red (You Died)      |
+
+---
+
+## 🔧 Adding Custom Triggers
+
+Edit the `TRIGGERS` array in `src/content.js`:
 
 ```javascript
 {
-  id: "my-custom-trigger",
-  name: "Something Happened",
-  urls: ["https://example.com/*"],
+  id: 'my-trigger',
+  name: 'My Event',
+  urls: ['https://example.com/*'],
+  bannerStyle: 'enemy-felled', // or 'you-died', 'grace'
   detection: {
-    type: "button_click",  // or "element_appears"
-    selectors: [".my-button-class"],
-    textMatch: ["Button Text"]  // optional
+    type: 'button_click', // or 'text_appears', 'element_appears'
+    textMatch: ['Button Text', 'Alt Text'],
   },
   banner: {
-    text: "SOMETHING ACHIEVED"
-  }
+    text: 'ACHIEVEMENT',
+  },
 }
 ```
 
 ### Detection Types
 
-- **button_click** - Triggers when a matching button is clicked
-- **element_appears** - Triggers when a matching element appears on the page
+| Type              | Description                                             |
+| ----------------- | ------------------------------------------------------- |
+| `button_click`    | Triggers when clicking a button matching `textMatch`    |
+| `text_appears`    | Triggers when text matching `textMatch` appears on page |
+| `element_appears` | Triggers when elements matching `selectors` appear      |
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
-├── manifest_chrome.json     # Manifest MV3 for Chrome/Edge/Brave
-├── manifest_firefox.json    # Manifest MV2 for Firefox
+├── manifest_chrome.json    # Chrome/Edge/Brave manifest (MV3)
+├── manifest_firefox.json   # Firefox manifest (MV2)
 ├── src/
-│   ├── content.js           # Core script with trigger engine
-│   ├── triggers.js          # Trigger definitions (reference)
-│   ├── style.css            # Banner styles with Mantinia font
-│   ├── popup.html           # Settings popup
-│   ├── popup.css            # Popup styles
-│   ├── popup.js             # Popup logic
+│   ├── content.js          # Core logic & trigger definitions
+│   ├── style.css           # Banner styles
+│   ├── popup.html/css/js   # Settings popup
 │   └── assets/
 │       ├── elden_ring_sound.mp3
 │       ├── icon.png
@@ -83,10 +94,16 @@ The extension uses a config-driven trigger system. To add new events, edit the `
 
 ---
 
-## Credits
+## 📜 Credits & Attribution
 
-- Original [Elden Email](https://github.com/mettignis/elden-email) by mettignis
-- Sound effects from FromSoftware games
-- Mantinia font for the medieval aesthetic
+- **Original Project**: [Elden Email](https://github.com/MettiFire/elden_mail_banner) by [Anna Mettifogo (MettiFire)](https://github.com/MettiFire)
+- **Sound Effects**: Sourced from FromSoftware games
+- **Font**: Mantinia for the medieval aesthetic
 
 This is a fan project inspired by FromSoftware's games. Not affiliated with or endorsed by FromSoftware, Bandai Namco, or any official entity.
+
+---
+
+## 📄 License
+
+[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) — Free to share and adapt for non-commercial use with attribution.
