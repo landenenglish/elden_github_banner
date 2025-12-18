@@ -1,177 +1,299 @@
-console.log("Elden Mail Banner content.js loaded!");
+console.log('Elden Banner content.js loaded!')
 
-// polyfill for Firefox compatibility
-const storage = (typeof browser !== "undefined") ? browser.storage : chrome.storage;
+// Trigger definitions - inline to avoid module loading issues in content scripts
+const TRIGGERS = [
+  {
+    id: 'github-pr-merged',
+    name: 'PR Merged',
+    urls: ['https://github.com/*'],
+    detection: {
+      type: 'button_click',
+      selectors: [
+        'button.btn-primary.merge-branch-action',
+        "button[data-details-container='.js-merge-commit-button']",
+        '.merge-message button.btn-primary',
+        '.js-merge-commit-button',
+        '.js-squash-commit-button',
+        '.js-rebase-commit-button',
+      ],
+      textMatch: [
+        'Merge pull request',
+        'Confirm merge',
+        'Squash and merge',
+        'Rebase and merge',
+        'Merge',
+        'Confirm squash and merge',
+        'Confirm rebase and merge',
+      ],
+    },
+    banner: {
+      text: 'PR MERGED',
+    },
+  },
+  {
+    id: 'github-pr-approved',
+    name: 'PR Approved',
+    urls: ['https://github.com/*'],
+    detection: {
+      type: 'button_click',
+      selectors: [
+        "button[type='submit'].btn-primary",
+        '.review-form button.btn-primary',
+      ],
+      textMatch: ['Submit review'],
+      additionalCheck: () => {
+        const approveRadio = document.querySelector(
+          'input[value="approve"]:checked'
+        )
+        return approveRadio !== null
+      },
+    },
+    banner: {
+      text: 'APPROVED',
+    },
+  },
+]
 
-// pre-load sound file
-const soundUrl = chrome.runtime.getURL("assets/elden_ring_sound.mp3");
+// Polyfill for Firefox compatibility
+const storage =
+  typeof browser !== 'undefined' ? browser.storage : chrome.storage
 
-// keywords for "Send" in various languages
-const keywords = ["Invia","Send","傳送","发送","送信","보내기","Enviar","Senden","Envoyer","Отправить","إرسال","ส่ง","Skicka","Sendt", "Gửi", "Надіслати", "Odeslán"];
+// Pre-load sound file
+const soundUrl = chrome.runtime.getURL('assets/elden_ring_sound.mp3')
 
-// default settings
-let soundEnabled = true;
-let bannerColor = "yellow";
+// Default settings
+let soundEnabled = true
+let bannerColor = 'yellow'
 
-// load preferences without rewriting saved preferences 
+// Load preferences
 const loadPrefs = async () => {
-  if (storage.get.length === 1) {
-    // Chrome callback
-    storage.sync.get(["soundEnabled", "bannerColor"], (res) => {
-      soundEnabled = res.soundEnabled !== undefined ? res.soundEnabled : true;
-      bannerColor = res.bannerColor || "yellow";
-    });
-  } else {
-    // Firefox promise
-    const res = await storage.sync.get(["soundEnabled", "bannerColor"]);
-    soundEnabled = res.soundEnabled !== undefined ? res.soundEnabled : true;
-    bannerColor = res.bannerColor || "yellow";
+  if (storage.sync) {
+    try {
+      const res = await new Promise((resolve) => {
+        storage.sync.get(['soundEnabled', 'bannerColor'], resolve)
+      })
+      soundEnabled = res.soundEnabled !== undefined ? res.soundEnabled : true
+      bannerColor = res.bannerColor || 'yellow'
+    } catch (e) {
+      console.error('Error loading preferences:', e)
+    }
   }
-};
-loadPrefs();
+}
+loadPrefs()
 
-// real-time updates
+// Real-time preference updates
 if (storage.onChanged) {
   storage.onChanged.addListener((changes) => {
-    if (changes.soundEnabled) soundEnabled = changes.soundEnabled.newValue;
-    if (changes.bannerColor) bannerColor = changes.bannerColor.newValue;
-  });
+    if (changes.soundEnabled) soundEnabled = changes.soundEnabled.newValue
+    if (changes.bannerColor) bannerColor = changes.bannerColor.newValue
+  })
 }
 
-function showEldenRingBanner() {
-  const banner = document.createElement('div');
-  banner.id = 'elden-ring-banner';
-  const imgPath = chrome.runtime.getURL(`assets/email_sent_${bannerColor}.png`);
-  banner.innerHTML = `<img src="${imgPath}" alt="Email Sent">`;
-  document.body.appendChild(banner);
+/**
+ * Show the Elden Ring-style banner with dynamic text
+ * @param {string} text - The text to display on the banner
+ */
+function showBanner(text) {
+  // Remove any existing banner
+  const existingBanner = document.getElementById('elden-ring-banner')
+  if (existingBanner) {
+    existingBanner.remove()
+  }
+
+  const banner = document.createElement('div')
+  banner.id = 'elden-ring-banner'
+  banner.className = `banner-${bannerColor}`
+
+  banner.innerHTML = `
+    <div class="elden-banner-overlay"></div>
+    <div class="elden-banner-content">
+      <span class="elden-banner-text">${text}</span>
+    </div>
+  `
+
+  document.body.appendChild(banner)
 
   if (soundEnabled) {
-    const audio = new Audio(soundUrl);
-    audio.volume = 0.35;
-    audio.play().catch(err => console.error("Errore nel suono:", err));
+    const audio = new Audio(soundUrl)
+    audio.volume = 0.35
+    audio.play().catch((err) => console.error('Error playing sound:', err))
   }
 
-  setTimeout(() => banner.classList.add('show'), 50);
+  // Animate in
+  setTimeout(() => banner.classList.add('show'), 50)
+
+  // Animate out after 3 seconds
   setTimeout(() => {
-    banner.classList.remove('show');
-    setTimeout(() => banner.remove(), 500);
-  }, 3000);
+    banner.classList.remove('show')
+    setTimeout(() => banner.remove(), 500)
+  }, 3000)
 }
 
-// gmail observer
-const gmailObserver = new MutationObserver(() => {
-  document.querySelectorAll('div[role="button"], button[role="button"]').forEach(btn => {
-    const label = btn.getAttribute("aria-label") || "";
-    const tooltip = btn.getAttribute("data-tooltip") || "";
-    const text = (btn.innerText || "").trim();
+/**
+ * Check if the current URL matches any of the trigger's URL patterns
+ * @param {string[]} urlPatterns - Array of URL patterns (with wildcards)
+ * @returns {boolean}
+ */
+function matchesUrl(urlPatterns) {
+  const currentUrl = window.location.href
+  return urlPatterns.some((pattern) => {
+    // Convert wildcard pattern to regex
+    const regexPattern = pattern
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*')
+    const regex = new RegExp(`^${regexPattern}$`)
+    return regex.test(currentUrl)
+  })
+}
 
-    const isSendBtn = keywords.some(k =>
-      label.toLowerCase().startsWith(k.toLowerCase()) ||
-      tooltip.toLowerCase().startsWith(k.toLowerCase()) ||
-      text.toLowerCase().startsWith(k.toLowerCase())
-    );
-
-    if (isSendBtn && !btn.dataset.eldenRingAttached) {
-      btn.addEventListener("click", () => {
-        setTimeout(showEldenRingBanner, 500);
-      });
-      btn.dataset.eldenRingAttached = "true";
+/**
+ * Check if an element matches the trigger's detection criteria
+ * @param {Element} element - The DOM element to check
+ * @param {Object} detection - The trigger's detection configuration
+ * @returns {boolean}
+ */
+function matchesDetection(element, detection) {
+  // Check if element matches any selector
+  const matchesSelector = detection.selectors.some((selector) => {
+    try {
+      return element.matches(selector)
+    } catch (e) {
+      return false
     }
-  });
-});
-gmailObserver.observe(document.body, { childList: true, subtree: true });
+  })
 
+  if (!matchesSelector) return false
 
-// outlook observer
-const outlookObserver = new MutationObserver(() => {
-  document.querySelectorAll('button, div[role="button"]').forEach(btn => {
-    const title = btn.getAttribute("title") || "";
-    const label = btn.getAttribute("aria-label") || "";
-    const text = (btn.innerText || "").trim();
+  // Check text match if specified
+  if (detection.textMatch && detection.textMatch.length > 0) {
+    const elementText = (element.innerText || element.textContent || '').trim()
+    const ariaLabel = element.getAttribute('aria-label') || ''
+    const title = element.getAttribute('title') || ''
 
-    const isSendBtn = keywords.some(k =>
-      title.toLowerCase().startsWith(k.toLowerCase()) ||
-      label.toLowerCase().startsWith(k.toLowerCase()) ||
-      text.toLowerCase().startsWith(k.toLowerCase())
-    );
+    const matchesText = detection.textMatch.some((text) => {
+      const lowerText = text.toLowerCase()
+      return (
+        elementText.toLowerCase().includes(lowerText) ||
+        ariaLabel.toLowerCase().includes(lowerText) ||
+        title.toLowerCase().includes(lowerText)
+      )
+    })
 
-    if (isSendBtn && !btn.dataset.eldenRingAttached) {
-      btn.addEventListener('click', () => {
-        setTimeout(showEldenRingBanner, 500);
-      });
-      btn.dataset.eldenRingAttached = "true";
-    }
-  });
-});
-outlookObserver.observe(document.body, { childList: true, subtree: true });
-
-
-// outlook.live.com observer
-const outlookLiveObserver = new MutationObserver(() => {
-  document.querySelectorAll('button[aria-label="Send"], button[aria-label="Invia"]').forEach(btn => {
-    if (!btn.dataset.eldenRingAttached) {
-      btn.addEventListener("click", () => {
-        console.log("Outlook Mail send button clicked");
-        setTimeout(showEldenRingBanner, 500);
-      });
-      btn.dataset.eldenRingAttached = "true";
-    }
-  });
-});
-outlookLiveObserver.observe(document.body, { childList: true, subtree: true });
-
-
-// protonmail.com observer and functions
-
-// recursive function to find buttons in Shadow DOMs
-function findProtonButtons(root = document) {
-  const buttons = [];
-
-  // search for buttons in the regular DOM
-  root.querySelectorAll && root.querySelectorAll('button[data-testid="composer:send-button"]').forEach(btn => {
-    buttons.push(btn);
-  });
-
-  // look for buttons in any Shadow DOM
-  if (root.querySelectorAll) {
-    root.querySelectorAll('*').forEach(el => {
-      if (el.shadowRoot) {
-        buttons.push(...findProtonButtons(el.shadowRoot));
-      }
-    });
+    if (!matchesText) return false
   }
 
-  return buttons;
+  // Run additional check if specified
+  if (
+    detection.additionalCheck &&
+    typeof detection.additionalCheck === 'function'
+  ) {
+    if (!detection.additionalCheck()) return false
+  }
+
+  return true
 }
 
-// observer
-const protonMailObserver = new MutationObserver(() => {
-  const buttons = findProtonButtons();
-  buttons.forEach(btn => {
-    if (!btn.dataset.eldenRingAttached) {
-      btn.addEventListener("click", () => {
-        console.log("Proton Mail send button clicked");
-        setTimeout(showEldenRingBanner, 500);
-      });
-      btn.dataset.eldenRingAttached = "true";
+/**
+ * Set up observers for all matching triggers
+ */
+function setupTriggerObservers() {
+  // Filter triggers that match the current URL
+  const activeTriggers = TRIGGERS.filter((trigger) => matchesUrl(trigger.urls))
+
+  if (activeTriggers.length === 0) {
+    console.log('Elden Banner: No active triggers for this URL')
+    return
+  }
+
+  console.log(
+    `Elden Banner: ${activeTriggers.length} active trigger(s) for this URL`
+  )
+
+  // Set up a single MutationObserver for all triggers
+  const observer = new MutationObserver(() => {
+    activeTriggers.forEach((trigger) => {
+      if (trigger.detection.type === 'button_click') {
+        setupButtonClickTrigger(trigger)
+      } else if (trigger.detection.type === 'element_appears') {
+        checkElementAppearsTrigger(trigger)
+      }
+    })
+  })
+
+  observer.observe(document.body, { childList: true, subtree: true })
+
+  // Also run immediately for any existing elements
+  activeTriggers.forEach((trigger) => {
+    if (trigger.detection.type === 'button_click') {
+      setupButtonClickTrigger(trigger)
+    } else if (trigger.detection.type === 'element_appears') {
+      checkElementAppearsTrigger(trigger)
     }
-  });
-});
-protonMailObserver.observe(document.body, { childList: true, subtree: true });
+  })
+}
 
+/**
+ * Set up click listeners for button_click type triggers
+ * @param {Object} trigger - The trigger configuration
+ */
+function setupButtonClickTrigger(trigger) {
+  const { detection, banner } = trigger
 
+  // Find all potential buttons
+  detection.selectors.forEach((selector) => {
+    try {
+      document.querySelectorAll(selector).forEach((element) => {
+        // Skip if already attached
+        if (element.dataset[`eldenTrigger_${trigger.id}`]) return
 
-// AOL Mail observer
-const aolObserver = new MutationObserver(() => {
-  document.querySelectorAll('button[data-test-id="compose-send-button"]').forEach(btn => {
-    if (!btn.dataset.eldenRingAttached) {
-      btn.addEventListener("click", () => {
-        console.log("AOL Mail send button clicked ✅");
-        setTimeout(showEldenRingBanner, 500); 
-      });
-      btn.dataset.eldenRingAttached = "true"; 
-      console.log("Listener attached to AOL Mail send button");
+        // Check if element matches detection criteria
+        if (matchesDetection(element, detection)) {
+          element.addEventListener('click', () => {
+            // Re-check additional criteria at click time
+            if (detection.additionalCheck && !detection.additionalCheck()) {
+              return
+            }
+            console.log(`Elden Banner: Triggered "${trigger.name}"`)
+            setTimeout(() => showBanner(banner.text), 500)
+          })
+          element.dataset[`eldenTrigger_${trigger.id}`] = 'true'
+        }
+      })
+    } catch (e) {
+      // Selector might be invalid, skip it
     }
-  });
-});
-aolObserver.observe(document.body, { childList: true, subtree: true });
+  })
+}
+
+/**
+ * Check for element_appears type triggers
+ * @param {Object} trigger - The trigger configuration
+ */
+function checkElementAppearsTrigger(trigger) {
+  const { detection, banner } = trigger
+
+  detection.selectors.forEach((selector) => {
+    try {
+      const elements = document.querySelectorAll(selector)
+      elements.forEach((element) => {
+        // Skip if already triggered for this element
+        if (element.dataset[`eldenTriggered_${trigger.id}`]) return
+
+        console.log(
+          `Elden Banner: Triggered "${trigger.name}" (element appeared)`
+        )
+        element.dataset[`eldenTriggered_${trigger.id}`] = 'true'
+        showBanner(banner.text)
+      })
+    } catch (e) {
+      // Selector might be invalid, skip it
+    }
+  })
+}
+
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', setupTriggerObservers)
+} else {
+  setupTriggerObservers()
+}
