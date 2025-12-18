@@ -70,7 +70,7 @@ fontFace
 // USER PREFERENCES
 // =============================================================================
 
-let soundEnabled = true
+let soundEnabled = false // Disabled by default, can be enabled via settings
 let bannerColor = 'yellow'
 
 async function loadPreferences() {
@@ -80,7 +80,7 @@ async function loadPreferences() {
     const res = await new Promise((resolve) => {
       storage.sync.get(['soundEnabled', 'bannerColor'], resolve)
     })
-    soundEnabled = res.soundEnabled !== undefined ? res.soundEnabled : true
+    soundEnabled = res.soundEnabled !== undefined ? res.soundEnabled : false
     bannerColor = res.bannerColor || 'yellow'
   } catch {
     // Use defaults

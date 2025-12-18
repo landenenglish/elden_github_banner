@@ -12,7 +12,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     storage = chrome.storage.sync;   // normal sync on chrome
   }
 
-  const DEFAULT_SOUND = true;
+  const DEFAULT_SOUND = false;
   const DEFAULT_COLOR = "yellow";
 
   // read preferences
