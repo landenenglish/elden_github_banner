@@ -8,20 +8,13 @@ const TRIGGERS = [
     urls: ['https://github.com/*'],
     detection: {
       type: 'button_click',
-      selectors: [
-        'button.btn-primary.merge-branch-action',
-        "button[data-details-container='.js-merge-commit-button']",
-        '.merge-message button.btn-primary',
-        '.js-merge-commit-button',
-        '.js-squash-commit-button',
-        '.js-rebase-commit-button',
-      ],
+      // Use generic button selector - we'll rely on text matching
+      selectors: ['button'],
       textMatch: [
         'Merge pull request',
         'Confirm merge',
         'Squash and merge',
         'Rebase and merge',
-        'Merge',
         'Confirm squash and merge',
         'Confirm rebase and merge',
       ],
@@ -36,10 +29,7 @@ const TRIGGERS = [
     urls: ['https://github.com/*'],
     detection: {
       type: 'button_click',
-      selectors: [
-        "button[type='submit'].btn-primary",
-        '.review-form button.btn-primary',
-      ],
+      selectors: ['button'],
       textMatch: ['Submit review'],
       additionalCheck: () => {
         const approveRadio = document.querySelector(
@@ -150,9 +140,10 @@ function matchesUrl(urlPatterns) {
  * Check if an element matches the trigger's detection criteria
  * @param {Element} element - The DOM element to check
  * @param {Object} detection - The trigger's detection configuration
+ * @param {string} triggerId - For debug logging
  * @returns {boolean}
  */
-function matchesDetection(element, detection) {
+function matchesDetection(element, detection, triggerId = '') {
   // Check if element matches any selector
   const matchesSelector = detection.selectors.some((selector) => {
     try {
@@ -178,6 +169,10 @@ function matchesDetection(element, detection) {
         title.toLowerCase().includes(lowerText)
       )
     })
+
+    if (matchesText) {
+      console.log(`Elden Banner: Found matching button for ${triggerId}:`, elementText)
+    }
 
     if (!matchesText) return false
   }
@@ -247,7 +242,7 @@ function setupButtonClickTrigger(trigger) {
         if (element.dataset[`eldenTrigger_${trigger.id}`]) return
 
         // Check if element matches detection criteria
-        if (matchesDetection(element, detection)) {
+        if (matchesDetection(element, detection, trigger.id)) {
           element.addEventListener('click', () => {
             // Re-check additional criteria at click time
             if (detection.additionalCheck && !detection.additionalCheck()) {
@@ -257,6 +252,7 @@ function setupButtonClickTrigger(trigger) {
             setTimeout(() => showBanner(banner.text), 500)
           })
           element.dataset[`eldenTrigger_${trigger.id}`] = 'true'
+          console.log(`Elden Banner: Attached listener to button for ${trigger.id}`)
         }
       })
     } catch (e) {
